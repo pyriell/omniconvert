@@ -1,3 +1,18 @@
+Version 1.1.1 (2012-06-30)
+	*	Fix intermittent crash when creating CBC files.
+	*	Change cheat finalization to flag type 8 as an enable code when the cheat
+		device is an Action Replay 2 (Version 1 or 2).  This primarily fixes 
+		a problem where Swap Magic Coder files could not be created if a 9 type 
+		enable code (conditional enable) was present in the input code list.
+		
+		(It seems that SMC does not support all the Action Replay 2 code types.  The
+		device's translation and validation logic will need revision in a future
+		version.)
+Version 1.1.0 (2009)
+	+	Added the ability to create Swap Magic Coder files.  Files are automatically
+		generated with AR2 Version 1 encryption.
+	*	Fix crash related to pointer write validation.
+
 Version 1.0.3
       *		Bypass all verifier lines when translating AR MAX codes. Previously, they were
 		analyzed and decrypted properly, but during translation only the first verifier
