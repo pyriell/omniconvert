@@ -1,0 +1,305 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+IDI_ICON1 ICON DISCARDABLE "oc.ico"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG1 DIALOGEX 0, 0, 383, 261
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
+CAPTION "Omniconvert"
+MENU IDR_MENU1
+FONT 8, "MS Sans Serif", 400, 0, 0x0
+BEGIN
+    EDITTEXT        IDC_EDIT_IN,6,23,181,214,ES_MULTILINE | WS_VSCROLL | WS_HSCROLL | ES_WANTRETURN
+    EDITTEXT        IDC_EDIT_OUT,190,23,187,214,ES_MULTILINE | WS_VSCROLL | WS_HSCROLL | ES_READONLY
+    PUSHBUTTON      "Convert",ID_BTN_CONVERT,6,244,43,11
+    LTEXT           "Input:",ID_STATIC_INPUT,6,13,103,8
+    LTEXT           "Output:",ID_STATIC_OUTPUT,191,13,130,8
+    PUSHBUTTON      "Clear",ID_BTN_CLEAR_IN,144,11,43,10
+    PUSHBUTTON      "Clear",ID_BTN_CLEAR_OUT,334,11,43,10
+    EDITTEXT        IDC_EDIT_GAMENAME,228,244,150,12,ES_AUTOHSCROLL
+    LTEXT           "Game Name:",IDC_STATIC,184,246,41,8
+    EDITTEXT        IDC_EDIT_GAMEID,141,244,40,12,ES_AUTOHSCROLL
+    LTEXT           "Game ID:",IDC_STATIC,108,246,31,8
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog for AR2 Key
+//
+
+IDD_DIALOG2 DIALOGEX 100, 130, 200, 40
+STYLE DS_SETFONT | WS_POPUP | WS_CAPTION
+CAPTION "Enter Encrypted AR2 Key Code"
+FONT 8, "MS Sans Serif", 400, 0, 0x0
+BEGIN
+    EDITTEXT       IDC_EDIT_AR2,6,15,50,12,0
+    PUSHBUTTON     "OK",IDOK,70,15,30,12
+    PUSHBUTTON     "RESET (AR1 Key)",ID_BTN_RESET,110,15,65,12
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator Table
+//
+IDA_ACCEL_TABLE ACCELERATORS DISCARDABLE
+BEGIN
+	"^a",       ID_EDIT_SELECTALL
+	"^c",       ID_EDIT_COPY
+	"^s",       ID_FILE_SAVEASTEXT
+	"^v",       ID_EDIT_PASTE
+	"^x",       ID_EDIT_CUT
+	"^z",       ID_EDIT_UNDO
+	VK_ESCAPE,  ID_FILE_EXIT, VIRTKEY
+END
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_DIALOG1, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        TOPMARGIN, 7
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU 
+BEGIN
+    POPUP "File"
+    BEGIN
+        MENUITEM "&Load Text File",             ID_FILE_LOADTEXT
+        MENUITEM "Save As &Text...\tCtrl + S",  ID_FILE_SAVEASTEXT
+        MENUITEM "Save As ARMAX (.bin)...",     ID_FILE_SAVEASARMAX
+	MENUITEM "Save As CB File (.cbc)...",   ID_FILE_SAVEASCBC
+	MENUITEM "Save As XP/GS File (.p2m)...",ID_FILE_SAVEASP2M
+	MENUITEM "Save As Swap Magic File (.bin)...",ID_FILE_SAVEASSMC
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit\tESC",                  ID_FILE_EXIT
+    END
+    POPUP "Edit"
+    BEGIN
+        MENUITEM "&Undo\tCtrl+Z",               ID_EDIT_UNDO
+        MENUITEM SEPARATOR
+        MENUITEM "Cu&t\tCtrl+X",                ID_EDIT_CUT
+        MENUITEM "&Copy\tCtrl+C",               ID_EDIT_COPY
+        MENUITEM "&Paste\tCtrl+V",              ID_EDIT_PASTE
+        MENUITEM "&Delete \tDel",               ID_EDIT_DELETE
+        MENUITEM SEPARATOR
+        MENUITEM "Select &All\tCtrl+A",         ID_EDIT_SELECTALL
+    END
+    POPUP "Input"
+    BEGIN
+        POPUP "Unencrypted"
+        BEGIN
+            MENUITEM "Standard",                    ID_INPUT_UNENC_COMMON
+            MENUITEM "Action Replay MAX",           ID_INPUT_UNENC_ARMAX
+	    MENUITEM "Action Replay V1/V2",         ID_INPUT_UNENC_AR1_2
+	    MENUITEM "CodeBreaker",                 ID_INPUT_UNENC_CB
+	    MENUITEM "GameShark V1/V2",             ID_INPUT_UNENC_GS1_2
+	    MENUITEM "Xploder/GameShark V3",        ID_INPUT_UNENC_XP
+        END
+        POPUP "Action Replay"
+        BEGIN
+            MENUITEM "Version 1",                   ID_INPUT_AR2_V1
+            MENUITEM "Version 2",                   ID_INPUT_AR2_V2
+            MENUITEM "MAX",                         ID_INPUT_ARMAX
+        END
+        POPUP "CodeBreaker"
+        BEGIN
+            MENUITEM "Version 1+ (All v7 Keys)",    ID_INPUT_CB
+            MENUITEM "Version 7+ (Common Key)",     ID_INPUT_CB7_COMMON
+        END
+        POPUP "GameShark"
+        BEGIN
+            POPUP "Interact"
+            BEGIN
+                MENUITEM "Version 1",                   ID_INPUT_IA_V1
+                MENUITEM "Version 2",                   ID_INPUT_IA_V2
+            END
+            POPUP "MadCatz"
+            BEGIN
+                MENUITEM "Version 3 - 4",               ID_INPUT_MC_V3
+                MENUITEM "Version 5+",                  ID_INPUT_MC_V5
+            END
+        END
+	POPUP "Swap Magic"
+	BEGIN
+	    MENUITEM "Coder Version 3.x",	    ID_INPUT_SMC
+	END
+        POPUP "Xploder"
+        BEGIN
+            MENUITEM "Version 1 - 3",               ID_INPUT_XP_V1
+            MENUITEM "Version 4",                   ID_INPUT_XP_V4
+	    MENUITEM "Version 5+",                  ID_INPUT_XP_V5
+        END
+    END
+    POPUP "Output"
+    BEGIN
+        POPUP "Unencrypted"
+        BEGIN
+            MENUITEM "Standard",                    ID_OUTPUT_UNENC_COMMON
+            MENUITEM "Action Replay MAX",           ID_OUTPUT_UNENC_ARMAX
+	    MENUITEM "Action Replay V1/V2",         ID_OUTPUT_UNENC_AR1_2
+	    MENUITEM "CodeBreaker",                 ID_OUTPUT_UNENC_CB
+	    MENUITEM "GameShark V1/V2",             ID_OUTPUT_UNENC_GS1_2
+	    MENUITEM "Xploder/GameShark V3",        ID_OUTPUT_UNENC_XP
+        END
+        POPUP "Action Replay"
+        BEGIN
+            MENUITEM "Version 1",                   ID_OUTPUT_AR2_V1
+            MENUITEM "Version 2",                   ID_OUTPUT_AR2_V2
+            MENUITEM "MAX",                         ID_OUTPUT_ARMAX
+        END
+        POPUP "CodeBreaker"
+        BEGIN
+	    MENUITEM "Version 1+ (All v7 Keys)",    ID_OUTPUT_CB
+            MENUITEM "Version 7+ (Common Key)",     ID_OUTPUT_CB7_COMMON
+        END
+        POPUP "GameShark"
+        BEGIN
+            POPUP "Interact"
+            BEGIN
+                MENUITEM "Version 1",                   ID_OUTPUT_IA_V1
+                MENUITEM "Version 2",                   ID_OUTPUT_IA_V2
+            END
+            POPUP "MadCatz"
+            BEGIN
+                MENUITEM "Version 3 - 4",               ID_OUTPUT_MC_V3
+                MENUITEM "Version 5+",                  ID_OUTPUT_MC_V5
+            END
+        END
+	POPUP "Swap Magic"
+	BEGIN
+		MENUITEM "Coder Version 3.x",	    ID_OUTPUT_SMC
+	END
+        POPUP "Xploder"
+        BEGIN
+            MENUITEM "Version 1 - 3",               ID_OUTPUT_XP_V1
+            MENUITEM "Version 4",                   ID_OUTPUT_XP_V4
+	    MENUITEM "Version 5+",                  ID_OUTPUT_XP_V5
+        END
+    END
+    POPUP "Options"
+    BEGIN
+//        POPUP "Parser"
+//        BEGIN
+//            MENUITEM "Reformat",                    ID_PARSER_REFORMAT
+//            MENUITEM "Simple",                      ID_PARSER_SIMPLE
+//            MENUITEM "Strict",                      ID_PARSER_STRICT
+//        END
+        MENUITEM "Make Organizers",                 ID_OPTION_MAKEFOLDERS
+	MENUITEM SEPARATOR
+        POPUP "AR MAX Verifiers"
+        BEGIN
+            MENUITEM "Automatic",                   ID_ARMAXVERIFIERS_AUTOMATIC
+            MENUITEM "Manual",                      ID_ARMAXVERIFIERS_MANUAL
+        END
+        POPUP "AR MAX Region"
+	BEGIN
+	    MENUITEM "USA",                         ID_ARMAXREGION_USA
+	    MENUITEM "PAL",                         ID_ARMAXREGION_PAL
+	    MENUITEM "Japan",                       ID_ARMAXREGION_JAPAN
+//	    MENUITEM "Null"                         ID_ARMAXREGION_NULL
+	END
+	POPUP "AR MAX Disc Hash"
+	BEGIN
+	    MENUITEM "Do Not Create",               ID_ARMAXHASH_NOHASH
+	END
+	MENUITEM SEPARATOR
+	MENUITEM "Set AR2 Key Code",                ID_AR2_KEY
+	MENUITEM SEPARATOR
+	POPUP "GS3 / XP4 Key"
+	BEGIN
+	   MENUITEM "Key 0",                       ID_GS3_KEY_0
+	   MENUITEM "Key 1",                       ID_GS3_KEY_1
+	   MENUITEM "Key 2",                       ID_GS3_KEY_2
+	   MENUITEM "Key 3",                       ID_GS3_KEY_3
+	   MENUITEM "Key 4",                       ID_GS3_KEY_4
+	END
+    END
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

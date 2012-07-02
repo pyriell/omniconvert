@@ -1,0 +1,32 @@
+Version 1.0.3
+      *		Bypass all verifier lines when translating AR MAX codes. Previously, they were
+		analyzed and decrypted properly, but during translation only the first verifier
+		line was discarded. Remaining lines were treated as codes, resulting in
+		conversion errors.
+      *		Bug that could occasionally result in multi-line code types being converted
+		improperly for GameShark version 3+/Xploder version 4+. Specifically, if the
+		second line started with a 7, the code would be discarded as though it was a
+		Gameshark version 5 verifier line. Added logic to not discard if the previous
+		line was identified as a two-line code type.
+
+
+Version 1.0.2
+	*	Resetting device encryptions so that CodeBreaker keys would be retained.
+	+	Retrieve Game ID from edit box when the input device is not AR MAX, even if the
+		verifier mode is Manual.
+
+Version 1.0.1
+	+	Added logic to remove BEEFC0DE and fix lines from CB enable codes during decryption.
+		This will prevent the lines from being converted to another device, if present.
+		This also prevents you from decrypting CB7 codes and re-encrypting to the same key.
+		You cannot go from one CB7 encryption key to another without an intermediate step,
+		but I can't imagine why you'd want to.
+	+	Added check on the comparison size when the input is CB and the output is another
+		standard device, such as GS3 or AR2.  Only CB and AR MAX support 8-bit tests.  
+		This will probably have little effect on  anyone.
+	*	Fixed the setting of the size parameter when converting an XP/GS/AR pointer write
+		to CB.
+	*	Made some minor modifications to the translation errors.
+
+Version 1.0.0
+	Initial release. 
