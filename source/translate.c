@@ -183,439 +183,410 @@ char *transGetErrorText(int idx) {
 	return *(tmp+idx);
 }
 
-int transBatchTranslate(cheat_t *src) {
-	cheat_t *dest = cheatInit(MAX_CODE_STEP);
-	int ret, i;
+int transOther(cheat_t *dest, cheat_t *src, int *idx) {
+    u8 cmd = src->code[*idx] >> 28;
+    u8 size;
+    u32 addr, val;
 
-	if(g_indevice == g_outdevice) return 0;
-
-	if(g_indevice != DEV_ARMAX) {
-		if(g_outdevice == DEV_ARMAX) {
-			for(i = 0; i < src->codecnt;) {
-				ret = transStdToMax(dest, src, &i);
-				if(!err_suppress && ret) break;
-			}
-		} else {
-			for(i = 0; i < src->codecnt;) {
-				ret = transOther(dest, src, &i);
-				if(!err_suppress && ret) break;
-			}
-		}
-	} else {
-		for(i = 0; i < src->codecnt;) {
-			ret = transMaxToStd(dest, src, &i);
-			if(!err_suppress && ret) break;
-		}
-	}
-	if(dest->codemax > src->codemax) src->code = realloc(src->code, sizeof(u32) * dest->codemax);
-	memcpy(src->code, dest->code, sizeof(u32) * dest->codecnt);
-	src->codecnt = dest->codecnt;
-
-	return ret;
+    switch(cmd) {
+        case STD_WRITE_BYTE:
+        case STD_WRITE_HALF:
+        case STD_WRITE_WORD:
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_INCREMENT_WRITE:
+            addr = src->code[*idx];
+            if(g_indevice == DEV_AR2 || g_indevice == DEV_AR1) {
+                if(g_outdevice == DEV_CB || g_outdevice == DEV_GS3) addr -= 0x10000;  //CodeBreaker/GS use zero-based width indicators
+                size = ((addr >> 20) & 7) - 1;
+            }
+            else {
+                size = (addr >> 20) & 7;
+                if(g_outdevice == DEV_AR2 || g_outdevice == DEV_AR1) addr += 0x10000; //AR1/AR2 use one-based width indicators
+            }
+            cheatAppendOctet(dest, addr);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            if(size > 3) {
+                if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
+                cheatAppendOctet(dest, src->code[*idx + 2]);
+                cheatAppendOctet(dest, src->code[*idx + 3]);
+                *idx+=2;
+            }
+            *idx+=2;
+            break;
+        case STD_WRITE_WORD_MULTI:
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
+            if((g_outdevice == DEV_AR2 || g_outdevice == DEV_AR1) && src->code[*idx + 3] > 0) return ERR_VALUE_INCREMENT;
+            cheatAppendOctet(dest, src->code[*idx + 2]);
+            cheatAppendOctet(dest, src->code[*idx + 3]);
+            *idx+=4;
+            break;
+        case STD_COPY_BYTES:
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
+            cheatAppendOctet(dest, src->code[*idx + 2]);
+            cheatAppendOctet(dest, src->code[*idx + 3]);
+            *idx+=4;
+            break;
+        case STD_POINTER_WRITE:
+            if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
+            /* Attempt to translate pointer writes.
+            so far as I know, GS3 stole (and subsequently wrecked) their format from the old AR
+            The second nibble is a size parameter, and the second word is a "load offset" that is added
+            to the address in the code (to accomodate addresses > 0xFFFFFF).  However, on the GS3, this infringes
+            upon their use of 3 uppermost bits of that nibble as a decryption key*/
+            if(g_outdevice == DEV_STD || g_indevice == DEV_STD || (g_outdevice != DEV_CB && g_indevice != DEV_CB)) {
+                cheatAppendOctet(dest, src->code[*idx]);
+                cheatAppendOctet(dest, src->code[*idx + 1]);
+                cheatAppendOctet(dest, src->code[*idx + 2]);
+                cheatAppendOctet(dest, src->code[*idx + 3]);
+                *idx += 4;
+                return 0;
+            }
+            if(g_indevice == DEV_CB) {
+                if(LOHALF(src->code[*idx + 2]) > 1) return ERR_EXCESS_OFFSETS;
+                addr = ADDR(src->code[*idx]);
+                u32 offset = addr & 0x1000000;
+                size = HIHALF(src->code[*idx + 2]);
+                if(size == 0) return ERR_PTR_SIZE;
+                cheatAppendOctet(dest, MAKE_STD_CMD(STD_POINTER_WRITE) | (size << 24) | (addr & 0xFFFFFF));
+                cheatAppendOctet(dest, offset);
+                cheatAppendOctet(dest, src->code[*idx + 3]);
+                cheatAppendOctet(dest, src->code[*idx + 1]);
+            } else {
+                size = (src->code[*idx] >> 24) & 0x3;
+                if(size == 0 || size == 3) size = 1;
+                cheatAppendOctet(dest, (src->code[*idx] & 0xF0FFFFFF) + src->code[*idx + 1]); //build the proper address
+                cheatAppendOctet(dest, src->code[*idx + 3]);				   //move value to third word
+                cheatAppendOctet(dest, 1 | (size << 16));				   //ensure count is one and or in the size
+                cheatAppendOctet(dest, src->code[*idx + 2]);				   //final word is offset
+            }
+            *idx+=4;
+            break;
+        case STD_BITWISE_OPERATE:		//GS5_VERIFIER | Neither GS nor AR do the bitwise ops, and GS5 uses them as verifiers.
+            if(g_indevice == DEV_CB || g_indevice == DEV_STD) {
+                if(g_outdevice == DEV_CB || g_outdevice == DEV_STD) {
+                    cheatAppendOctet(dest, src->code[*idx]);
+                    cheatAppendOctet(dest, src->code[*idx + 1]);
+                } else {
+                    return ERR_BITWISE;
+                }
+            }
+            *idx+=2;
+            break;
+        case STD_ML_TEST:			//Also AR2_COND_HOOK
+            if(g_indevice == DEV_AR2 || g_indevice == DEV_AR1) {
+                if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
+                if(g_outdevice == DEV_STD || g_outdevice == DEV_AR1 || g_outdevice == DEV_AR2) {
+                    cheatAppendOctet(dest, src->code[*idx]);
+                    cheatAppendOctet(dest, src->code[*idx + 1]);
+                    cheatAppendOctet(dest, src->code[*idx + 2]);
+                    cheatAppendOctet(dest, src->code[*idx + 3]);
+                    *idx+=4;
+                } else {
+                    cheatAppendOctet(dest, MAKE_STD_CMD(STD_COND_HOOK) | ADDR(src->code[*idx + 1]));
+                    cheatAppendOctet(dest, src->code[*idx + 2]);
+                    *idx+=4;
+                }
+            } else if(g_indevice == DEV_CB || g_indevice == DEV_GS3) {	//STD_ML_TEST
+                if(g_outdevice == DEV_STD) {
+                    cheatAppendOctet(dest, src->code[*idx]);
+                    cheatAppendOctet(dest, src->code[*idx + 1]);
+                    *idx+=2;
+                } else {
+                    return ERR_TEST_TYPE;
+                }
+            } else { //if (g_indevice == DEV_STD)
+                if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
+                if((src->code[*idx + 2] >> 28) == 0) {		//this is either an AR hook code, or an error
+                    // TODO: [oddity] Should the following actually be checking g_outdevice & g_indevice?
+                    if(g_outdevice == DEV_AR2 || g_outdevice == DEV_AR2) {
+                        cheatAppendOctet(dest, src->code[*idx]);
+                        cheatAppendOctet(dest, src->code[*idx + 1]);
+                        cheatAppendOctet(dest, src->code[*idx + 2]);
+                        cheatAppendOctet(dest, src->code[*idx + 3]);
+                        *idx+=4;
+                    } else {
+                        cheatAppendOctet(dest, MAKE_STD_CMD(STD_COND_HOOK) | ADDR(src->code[*idx + 1]));
+                        cheatAppendOctet(dest, src->code[*idx + 2]);
+                        *idx+=4;
+                    }
+                } else {
+                    // TODO: [oddity] Should the following actually be checking g_outdevice & g_indevice?
+                    if(g_outdevice == DEV_AR2 || g_outdevice == DEV_AR2) {
+                        return ERR_TEST_TYPE;
+                    } else {
+                        cheatAppendOctet(dest, src->code[*idx]);
+                        cheatAppendOctet(dest, src->code[*idx + 1]);
+                        *idx+=2;
+                    }
+                }
+            }
+            break;
+        case STD_COND_HOOK:
+            if(g_outdevice == DEV_AR1 || g_outdevice == DEV_AR2) {
+                cheatAppendOctet(dest, MAKE_STD_CMD(AR2_COND_HOOK) | (ADDR(src->code[*idx]) + 1));
+                cheatAppendOctet(dest, ADDR(src->code[*idx]));
+                cheatAppendOctet(dest, src->code[*idx + 1]);
+                cheatAppendOctet(dest, 0);
+            } else {
+                cheatAppendOctet(dest, src->code[*idx]);
+                cheatAppendOctet(dest, src->code[*idx + 1]);
+            }
+            *idx+=2;
+            break;
+        case STD_ML_WRITE_WORD:
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_TIMER:					//I've seen this code never.  Just assume the value is a standard count.
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_TEST_ALL:
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_TEST_SINGLE:
+            if(g_indevice == DEV_CB && (g_outdevice != DEV_STD) && (((src->code[*idx + 1] >> 16) & 0xF)  > 0)) return ERR_TEST_SIZE;
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_TEST_MULTI:
+            if(g_indevice == DEV_CB && (g_outdevice != DEV_STD) && (((src->code[*idx] >> 24) & 0xF) > 0)) return ERR_TEST_SIZE;
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_UNCOND_HOOK:				//difficult to make determinations here.  Assume it's correct.
+            cheatAppendOctet(dest, src->code[*idx]);
+            cheatAppendOctet(dest, src->code[*idx + 1]);
+            *idx+=2;
+            break;
+    }
+    return 0;
 }
 
 int transStdToMax(cheat_t *dest, cheat_t *src, int *idx) {
-	int i, cnt, trans, tmp, ret;
-	u8 command, size;
-	u32 address, increment, offset, value, count, skip;
-	u32 *code = src->code;
-	
-	cnt = trans = ret = 0;
-	command = GET_STD_CMD(code[*idx]);
-	switch(command) {
-		case STD_WRITE_BYTE:
-		case STD_WRITE_HALF:
-		case STD_WRITE_WORD:
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_DIRECT, command) | ADDR(code[*idx]));
-			cheatAppendOctet(dest, code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_INCREMENT_WRITE: //Also decrement
-			tmp		= (code[*idx] >> 20) & 0x7;
-			if(g_indevice == DEV_AR1 || g_indevice == DEV_AR2) {
-				size = ARSize[tmp];
-				tmp = (tmp & 1) ? 0 : 1;		//flag increment/decrement
-			}
-			else {
-				size = STDSize[tmp];
-				tmp = (tmp & 1) ? 1 : 0;		//flag increment/decrement
-			}
-			if(size == SIZE_WORD) {
-				trans=4;
-				if(*idx + 4 >= src->codecnt) {
-					ret = ERR_INVALID_CODE;		//too few octets
-					break;
-				}
-				value = code[*idx + 2];
-			}
-			else {
-				value = LOHALF(code[*idx]);
-				trans=2;
-			}
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_INCREMENT, size) | ADDR(code[*idx + 1]));
-			cheatAppendOctet(dest, (tmp) ? (~value) + 1 : value);
-			*idx+=trans;
-			break;
-		case STD_WRITE_WORD_MULTI:
-			if(*idx+4 > src->codecnt) {
-				ret = ERR_INVALID_CODE;		//too few octets
-				break;
-			}
-			increment 	= code[*idx + 3];
-			if(increment > ARM_MAX_INCREMENT) {
-				ret = ERR_VALUE_INCREMENT;	//unsupported value increment size
-				break;
-			}
-			cheatAppendOctet(dest, ARM_CMD_SPECIAL);
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, 2, SIZE_WORD) | ADDR(code[*idx + 0]));
-			cheatAppendOctet(dest, code[*idx + 2]);
-			cheatAppendOctet(dest, ((increment & MASK_LOBYTE32) << 24) | (HIHALF(code[*idx + 1]) << 16) | LOHALF(code[*idx + 1]));
-			*idx+=4;
-			break;
-		case STD_COPY_BYTES:
-			*idx+=4;
-			ret = ERR_COPYBYTES;					//ARM does not support copy bytes.
-			break;
-		case STD_POINTER_WRITE:
-			if(*idx + 4 > src->codecnt) {
-				ret = ERR_INVALID_CODE;		//too few octets
-				break;
-			}
-			if(g_indevice == DEV_CB) {
-				size 	= HIHALF(code[*idx + 2]) & 0x3;
-				address = ADDR(code[*idx]);
-				value 	= code[*idx + 1] & valmask[size];
-				count 	= LOHALF(code[*idx + 2]);
-				offset	= code[*idx + 3];
-			} else {
-				size 	= HIBYTE32(code[*idx]) & 0xF;
-				if(size < 1 && g_indevice == DEV_GS3) size = 1;  //GS3 does not do 8-bit writes (or 32 really).
-				address = code[*idx] & 0xFFFFFF + code[*idx + 1];
-				offset 	= code[*idx + 2];
-				value 	= code[*idx + 3] & valmask[size];
-				count 	= 0;
-			}
-			*idx+=4;
-			if(count > 1) {						//no support for multiple levels of indirection
-				*idx+=(count>>1<<1);
-				ret = ERR_EXCESS_OFFSETS;
-				break;
-			}
-			if(size == SIZE_WORD && offset > 0) {			//32-bit write does not allow offset
-				ret = ERR_OFFSET_VALUE_32;
-				break;
-			}
-			if(size == SIZE_HALF && offset > 0xFFFF) {	//16-bit write has maximum offset 65535
-				ret = ERR_OFFSET_VALUE_16;
-				break;
-			}
-			if(size == SIZE_BYTE && offset > 0xFFFFFF) {		//8 -bit write has maximum offset 16,777,215
-				ret = ERR_OFFSET_VALUE_8;
-				break;
-			}
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_POINTER, size) | address);
-			cheatAppendOctet(dest, (offset << 16) | value);
-			break;
-		case STD_BITWISE_OPERATE: 					//CB Only!
-			*idx+=2;
-			ret = ERR_BITWISE;
-			break;
-		case STD_ML_TEST: {
-			if(g_indevice == DEV_AR1 || g_indevice == DEV_AR2) {
-				if(*idx + 4 > src->codecnt) {
-					return ERR_INVALID_CODE;
-				}
-				cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_1, SIZE_WORD) | ADDR(code[*idx + 1]));
-				cheatAppendOctet(dest, code[*idx + 2]);
-				cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_HOOK, SIZE_WORD) | ADDR(code[*idx + 1]));
-				cheatAppendOctet(dest, ARM_ENABLE_STD);
-				*idx+=4;
-			} else {
-				cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_1, SIZE_HALF) | ADDR(code[*idx]));
-				cheatAppendOctet(dest, LOHALF(code[*idx + 1]));
-				int hold = dest->codecnt - 2;
-				skip		= HIHALF(code[*idx + 1]) << 1;
-				*idx+=2;
-				skip += *idx;
-				int lines = 0;
-				while(*idx < src->codecnt && *idx < skip) {
-					ret = transStdToMax(dest, src, idx);
-					if(ret) break;
-					lines++;
-				}
-				if(!ret && lines > 1) {
-					if(lines == 2)
-						dest->code[hold] = MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_2, SIZE_HALF) | ADDR(dest->code[hold]);
-					else {
-						dest->code[hold] = MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_N, SIZE_HALF) | ADDR(dest->code[hold]);
-						cheatAppendOctet(dest, ARM_CMD_SPECIAL);
-						cheatAppendOctet(dest, ARM_CMD_RESUME);
-					}
-				}
-			}
-			break;
-		}
-		case STD_COND_HOOK:
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_1, SIZE_WORD) | ADDR(code[*idx]));
-			cheatAppendOctet(dest, code[*idx + 1]);
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_HOOK, SIZE_WORD) | ADDR(code[*idx]));
-			cheatAppendOctet(dest, ARM_ENABLE_STD);
-			*idx+=2;
-			break;
-		case STD_ML_WRITE_WORD:
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_DIRECT, SIZE_WORD) | ADDR(code[*idx]));
-			cheatAppendOctet(dest, code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_TIMER:				//unsupported
-			*idx+=2;
-			ret = ERR_TIMER;
-			break;
-		case STD_TEST_ALL:			//unsupported
-			*idx+=2;
-			ret = ERR_ALL_OFF;
-			break;
-		case STD_TEST_SINGLE:
-			tmp = (code[*idx + 1]>>20) & 0x7;
-			if(tmp > 5 || tmp == 4) {
-				ret = ERR_TEST_TYPE;
-				break;
-			}
-			size = (g_indevice == DEV_CB) ? (HIHALF(code[*idx + 1]) & 0x1) ^ 1 : SIZE_HALF;
-			cheatAppendOctet(dest, MAKE_ARM_CMD(STDCompToArm[tmp], ARM_SKIP_1, size) | ADDR(code[*idx]));
-			cheatAppendOctet(dest, LOHALF(code[*idx + 1]));
-			*idx+=2;
-			break;
-		case STD_TEST_MULTI:
-			tmp = (code[*idx + 1]>>28) & 0x7;
-			if(tmp > 5 || tmp == 4) {
-				ret = ERR_TEST_TYPE;
-				break;
-			}
-			size = (g_indevice == DEV_CB) ? (HIBYTE32(code[*idx]) & 0x1) ^ 1 : SIZE_HALF;
-			skip = (g_indevice == DEV_CB) ? HIHALF(code[*idx]) & 0xFF : HIHALF(code[*idx]) & 0xFFF;
-			count = (skip <= 2) ? skip-1 : ARM_SKIP_N;
-			cheatAppendOctet(dest, MAKE_ARM_CMD(STDCompToArm[tmp], count, size) | ADDR(code[*idx+1]));
-			cheatAppendOctet(dest, LOHALF(code[*idx]));
-			*idx+=2;
-			if(skip > 2) {
-				skip = (skip << 1) + *idx;
-				while(*idx < src->codecnt && *idx < skip) {
-					ret = transStdToMax(dest, src, idx);
-					if(ret) break;
-				}
-				if(!ret) {
-					cheatAppendOctet(dest, ARM_CMD_SPECIAL);
-					cheatAppendOctet(dest, ARM_CMD_RESUME);
-				}
-			}
-			break;
-		case STD_UNCOND_HOOK:
-			address = ADDR(code[*idx]);
-			value = ARM_ENABLE_STD;
-			if(address == 0x100008 || address == 0x100000 || address == 0x200000 || address == 0x200008) {  //likely entry point values
-				if(code[*idx + 1] == 0x1FD || code[*idx + 1] == 0xE)
-					value = ARM_ENABLE_INT;
-				else
-					address = code[*idx + 1] & 0x1FFFFFC;
-			}
-			cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_HOOK, SIZE_WORD) | address);
-			cheatAppendOctet(dest, value);
-			*idx+=2;
-			break;
-	}
-	return ret;
-}
+    int i, cnt, trans, tmp, ret;
+    u8 command, size;
+    u32 address, increment, offset, value, count, skip;
+    u32 *code = src->code;
 
-int transOther(cheat_t *dest, cheat_t *src, int *idx) {
-	u8 cmd = src->code[*idx] >> 28;
-	u8 size;
-	u32 addr, val;
-
-	switch(cmd) {
-		case STD_WRITE_BYTE:
-		case STD_WRITE_HALF:
-		case STD_WRITE_WORD:
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_INCREMENT_WRITE:
-			addr = src->code[*idx];
-			if(g_indevice == DEV_AR2 || g_indevice == DEV_AR1) {
-				if(g_outdevice == DEV_CB || g_outdevice == DEV_GS3) addr -= 0x10000;  //CodeBreaker/GS use zero-based width indicators
-				size = ((addr >> 20) & 7) - 1;
-			}
-			else {
-				size = (addr >> 20) & 7;
-				if(g_outdevice == DEV_AR2 || g_outdevice == DEV_AR1) addr += 0x10000; //AR1/AR2 use one-based width indicators
-			}
-			cheatAppendOctet(dest, addr);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			if(size > 3) {
-				if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
-				cheatAppendOctet(dest, src->code[*idx + 2]);
-				cheatAppendOctet(dest, src->code[*idx + 3]);
-				*idx+=2;
-			}
-			*idx+=2;
-			break;
-		case STD_WRITE_WORD_MULTI:
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
-			if((g_outdevice == DEV_AR2 || g_outdevice == DEV_AR1) && src->code[*idx + 3] > 0) return ERR_VALUE_INCREMENT;
-			cheatAppendOctet(dest, src->code[*idx + 2]);
-			cheatAppendOctet(dest, src->code[*idx + 3]);
-			*idx+=4;
-			break;
-		case STD_COPY_BYTES:
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
-			cheatAppendOctet(dest, src->code[*idx + 2]);
-			cheatAppendOctet(dest, src->code[*idx + 3]);
-			*idx+=4;
-			break;
-		case STD_POINTER_WRITE:
-			if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
-			/* Attempt to translate pointer writes.  
-			so far as I know, GS3 stole (and subsequently wrecked) their format from the old AR
-			The second nibble is a size parameter, and the second word is a "load offset" that is added
-			to the address in the code (to accomodate addresses > 0xFFFFFF).  However, on the GS3, this infringes
-			upon their use of 3 uppermost bits of that nibble as a decryption key*/
-			if(g_outdevice == DEV_STD || g_indevice == DEV_STD || (g_outdevice != DEV_CB && g_indevice != DEV_CB)) {
-				cheatAppendOctet(dest, src->code[*idx]);
-				cheatAppendOctet(dest, src->code[*idx + 1]);
-				cheatAppendOctet(dest, src->code[*idx + 2]);
-				cheatAppendOctet(dest, src->code[*idx + 3]);
-				*idx += 4;
-				return 0;
-			}
-			if(g_indevice == DEV_CB) {
-				if(LOHALF(src->code[*idx + 2]) > 1) return ERR_EXCESS_OFFSETS;
-				addr = ADDR(src->code[*idx]);
-				u32 offset = addr & 0x1000000;
-				size = HIHALF(src->code[*idx + 2]);
-				if(size == 0) return ERR_PTR_SIZE;
-				cheatAppendOctet(dest, MAKE_STD_CMD(STD_POINTER_WRITE) | (size << 24) | (addr & 0xFFFFFF));
-				cheatAppendOctet(dest, offset);
-				cheatAppendOctet(dest, src->code[*idx + 3]);
-				cheatAppendOctet(dest, src->code[*idx + 1]);
-			} else {
-				size = (src->code[*idx] >> 24) & 0x3;
-				if(size == 0 || size == 3) size = 1;
-				cheatAppendOctet(dest, (src->code[*idx] & 0xF0FFFFFF) + src->code[*idx + 1]); //build the proper address
-				cheatAppendOctet(dest, src->code[*idx + 3]);				   //move value to third word
-				cheatAppendOctet(dest, 1 | (size << 16));				   //ensure count is one and or in the size
-				cheatAppendOctet(dest, src->code[*idx + 2]);				   //final word is offset
-			}
-			*idx+=4;
-			break;
-		case STD_BITWISE_OPERATE:		//GS5_VERIFIER | Neither GS nor AR do the bitwise ops, and GS5 uses them as verifiers.
-			if(g_indevice == DEV_CB || g_indevice == DEV_STD) {
-				if(g_outdevice == DEV_CB || g_outdevice == DEV_STD) {
-					cheatAppendOctet(dest, src->code[*idx]);
-					cheatAppendOctet(dest, src->code[*idx + 1]);
-				} else {
-					return ERR_BITWISE;
-				}
-			}
-			*idx+=2;
-			break;
-		case STD_ML_TEST:			//Also AR2_COND_HOOK
-			if(g_indevice == DEV_AR2 || g_indevice == DEV_AR1) {
-				if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
-				if(g_outdevice == DEV_STD || g_outdevice == DEV_AR1 || g_outdevice == DEV_AR2) {
-					cheatAppendOctet(dest, src->code[*idx]);
-					cheatAppendOctet(dest, src->code[*idx + 1]);
-					cheatAppendOctet(dest, src->code[*idx + 2]);
-					cheatAppendOctet(dest, src->code[*idx + 3]);
-					*idx+=4;
-				} else {
-					cheatAppendOctet(dest, MAKE_STD_CMD(STD_COND_HOOK) | ADDR(src->code[*idx + 1]));
-					cheatAppendOctet(dest, src->code[*idx + 2]);
-					*idx+=4;
-				}
-			} else if(g_indevice == DEV_CB || g_indevice == DEV_GS3) {	//STD_ML_TEST
-				if(g_outdevice == DEV_STD) {
-					cheatAppendOctet(dest, src->code[*idx]);
-					cheatAppendOctet(dest, src->code[*idx + 1]);
-					*idx+=2;
-				} else {
-					return ERR_TEST_TYPE;
-				}
-			} else { //if (g_indevice == DEV_STD)
-				if(*idx + 2 >= src->codecnt) return ERR_INVALID_CODE;
-				if((src->code[*idx + 2] >> 28) == 0) {		//this is either an AR hook code, or an error
-					if(g_outdevice == DEV_AR2 || g_outdevice == DEV_AR2) {
-						cheatAppendOctet(dest, src->code[*idx]);
-						cheatAppendOctet(dest, src->code[*idx + 1]);
-						cheatAppendOctet(dest, src->code[*idx + 2]);
-						cheatAppendOctet(dest, src->code[*idx + 3]);
-						*idx+=4;
-					} else {
-						cheatAppendOctet(dest, MAKE_STD_CMD(STD_COND_HOOK) | ADDR(src->code[*idx + 1]));
-						cheatAppendOctet(dest, src->code[*idx + 2]);
-						*idx+=4;
-					}
-				} else {
-					if(g_outdevice == DEV_AR2 || g_outdevice == DEV_AR2) {
-						return ERR_TEST_TYPE;
-					} else {
-						cheatAppendOctet(dest, src->code[*idx]);
-						cheatAppendOctet(dest, src->code[*idx + 1]);
-						*idx+=2;
-					}
-				}
-			}
-			break;
-		case STD_COND_HOOK:
-			if(g_outdevice == DEV_AR1 || g_outdevice == DEV_AR2) {
-				cheatAppendOctet(dest, MAKE_STD_CMD(AR2_COND_HOOK) | (ADDR(src->code[*idx]) + 1));
-				cheatAppendOctet(dest, ADDR(src->code[*idx]));
-				cheatAppendOctet(dest, src->code[*idx + 1]);
-				cheatAppendOctet(dest, 0);
-			} else {
-				cheatAppendOctet(dest, src->code[*idx]);
-				cheatAppendOctet(dest, src->code[*idx + 1]);
-			}
-			*idx+=2;
-			break;
-		case STD_ML_WRITE_WORD:
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_TIMER:					//I've seen this code never.  Just assume the value is a standard count.
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_TEST_ALL:
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_TEST_SINGLE:
-			if(g_indevice == DEV_CB && (g_outdevice != DEV_STD) && (((src->code[*idx + 1] >> 16) & 0xF)  > 0)) return ERR_TEST_SIZE;
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_TEST_MULTI:
-			if(g_indevice == DEV_CB && (g_outdevice != DEV_STD) && (((src->code[*idx] >> 24) & 0xF) > 0)) return ERR_TEST_SIZE;
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			*idx+=2;
-			break;
-		case STD_UNCOND_HOOK:				//difficult to make determinations here.  Assume it's correct.
-			cheatAppendOctet(dest, src->code[*idx]);
-			cheatAppendOctet(dest, src->code[*idx + 1]);
-			*idx+=2;
-			break;
-	}
-	return 0;
+    cnt = trans = ret = 0;
+    command = GET_STD_CMD(code[*idx]);
+    switch(command) {
+        case STD_WRITE_BYTE:
+        case STD_WRITE_HALF:
+        case STD_WRITE_WORD:
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_DIRECT, command) | ADDR(code[*idx]));
+            cheatAppendOctet(dest, code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_INCREMENT_WRITE: //Also decrement
+            tmp		= (code[*idx] >> 20) & 0x7;
+            if(g_indevice == DEV_AR1 || g_indevice == DEV_AR2) {
+                size = ARSize[tmp];
+                tmp = (tmp & 1) ? 0 : 1;		//flag increment/decrement
+            }
+            else {
+                size = STDSize[tmp];
+                tmp = (tmp & 1) ? 1 : 0;		//flag increment/decrement
+            }
+            if(size == SIZE_WORD) {
+                trans=4;
+                if(*idx + 4 >= src->codecnt) {
+                    ret = ERR_INVALID_CODE;		//too few octets
+                    break;
+                }
+                value = code[*idx + 2];
+            }
+            else {
+                value = LOHALF(code[*idx]);
+                trans=2;
+            }
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_INCREMENT, size) | ADDR(code[*idx + 1]));
+            cheatAppendOctet(dest, (tmp) ? (~value) + 1 : value);
+            *idx+=trans;
+            break;
+        case STD_WRITE_WORD_MULTI:
+            if(*idx+4 > src->codecnt) {
+                ret = ERR_INVALID_CODE;		//too few octets
+                break;
+            }
+            increment 	= code[*idx + 3];
+            if(increment > ARM_MAX_INCREMENT) {
+                ret = ERR_VALUE_INCREMENT;	//unsupported value increment size
+                break;
+            }
+            cheatAppendOctet(dest, ARM_CMD_SPECIAL);
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, 2, SIZE_WORD) | ADDR(code[*idx + 0]));
+            cheatAppendOctet(dest, code[*idx + 2]);
+            cheatAppendOctet(dest, ((increment & MASK_LOBYTE32) << 24) | (HIHALF(code[*idx + 1]) << 16) | LOHALF(code[*idx + 1]));
+            *idx+=4;
+            break;
+        case STD_COPY_BYTES:
+            *idx+=4;
+            ret = ERR_COPYBYTES;					//ARM does not support copy bytes.
+            break;
+        case STD_POINTER_WRITE:
+            if(*idx + 4 > src->codecnt) {
+                ret = ERR_INVALID_CODE;		//too few octets
+                break;
+            }
+            if(g_indevice == DEV_CB) {
+                size 	= HIHALF(code[*idx + 2]) & 0x3;
+                address = ADDR(code[*idx]);
+                value 	= code[*idx + 1] & valmask[size];
+                count 	= LOHALF(code[*idx + 2]);
+                offset	= code[*idx + 3];
+            } else {
+                size 	= HIBYTE32(code[*idx]) & 0xF;
+                if(size < 1 && g_indevice == DEV_GS3) size = 1;  //GS3 does not do 8-bit writes (or 32 really).
+                address = code[*idx] & 0xFFFFFF + code[*idx + 1];
+                offset 	= code[*idx + 2];
+                value 	= code[*idx + 3] & valmask[size];
+                count 	= 0;
+            }
+            *idx+=4;
+            if(count > 1) {						//no support for multiple levels of indirection
+                *idx+=(count>>1<<1);
+                ret = ERR_EXCESS_OFFSETS;
+                break;
+            }
+            if(size == SIZE_WORD && offset > 0) {			//32-bit write does not allow offset
+                ret = ERR_OFFSET_VALUE_32;
+                break;
+            }
+            if(size == SIZE_HALF && offset > 0xFFFF) {	//16-bit write has maximum offset 65535
+                ret = ERR_OFFSET_VALUE_16;
+                break;
+            }
+            if(size == SIZE_BYTE && offset > 0xFFFFFF) {		//8 -bit write has maximum offset 16,777,215
+                ret = ERR_OFFSET_VALUE_8;
+                break;
+            }
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_POINTER, size) | address);
+            cheatAppendOctet(dest, (offset << 16) | value);
+            break;
+        case STD_BITWISE_OPERATE: 					//CB Only!
+            *idx+=2;
+            ret = ERR_BITWISE;
+            break;
+        case STD_ML_TEST: {
+            if(g_indevice == DEV_AR1 || g_indevice == DEV_AR2) {
+                if(*idx + 4 > src->codecnt) {
+                    return ERR_INVALID_CODE;
+                }
+                cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_1, SIZE_WORD) | ADDR(code[*idx + 1]));
+                cheatAppendOctet(dest, code[*idx + 2]);
+                cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_HOOK, SIZE_WORD) | ADDR(code[*idx + 1]));
+                cheatAppendOctet(dest, ARM_ENABLE_STD);
+                *idx+=4;
+            } else {
+                cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_1, SIZE_HALF) | ADDR(code[*idx]));
+                cheatAppendOctet(dest, LOHALF(code[*idx + 1]));
+                int hold = dest->codecnt - 2;
+                skip		= HIHALF(code[*idx + 1]) << 1;
+                *idx+=2;
+                skip += *idx;
+                int lines = 0;
+                while(*idx < src->codecnt && *idx < skip) {
+                    ret = transStdToMax(dest, src, idx);
+                    if(ret) break;
+                    lines++;
+                }
+                if(!ret && lines > 1) {
+                    if(lines == 2)
+                        dest->code[hold] = MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_2, SIZE_HALF) | ADDR(dest->code[hold]);
+                    else {
+                        dest->code[hold] = MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_N, SIZE_HALF) | ADDR(dest->code[hold]);
+                        cheatAppendOctet(dest, ARM_CMD_SPECIAL);
+                        cheatAppendOctet(dest, ARM_CMD_RESUME);
+                    }
+                }
+            }
+            break;
+        }
+        case STD_COND_HOOK:
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_EQUAL, ARM_SKIP_1, SIZE_WORD) | ADDR(code[*idx]));
+            cheatAppendOctet(dest, code[*idx + 1]);
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_HOOK, SIZE_WORD) | ADDR(code[*idx]));
+            cheatAppendOctet(dest, ARM_ENABLE_STD);
+            *idx+=2;
+            break;
+        case STD_ML_WRITE_WORD:
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_DIRECT, SIZE_WORD) | ADDR(code[*idx]));
+            cheatAppendOctet(dest, code[*idx + 1]);
+            *idx+=2;
+            break;
+        case STD_TIMER:				//unsupported
+            *idx+=2;
+            ret = ERR_TIMER;
+            break;
+        case STD_TEST_ALL:			//unsupported
+            *idx+=2;
+            ret = ERR_ALL_OFF;
+            break;
+        case STD_TEST_SINGLE:
+            tmp = (code[*idx + 1]>>20) & 0x7;
+            if(tmp > 5 || tmp == 4) {
+                ret = ERR_TEST_TYPE;
+                break;
+            }
+            size = (g_indevice == DEV_CB) ? (HIHALF(code[*idx + 1]) & 0x1) ^ 1 : SIZE_HALF;
+            cheatAppendOctet(dest, MAKE_ARM_CMD(STDCompToArm[tmp], ARM_SKIP_1, size) | ADDR(code[*idx]));
+            cheatAppendOctet(dest, LOHALF(code[*idx + 1]));
+            *idx+=2;
+            break;
+        case STD_TEST_MULTI:
+            tmp = (code[*idx + 1]>>28) & 0x7;
+            if(tmp > 5 || tmp == 4) {
+                ret = ERR_TEST_TYPE;
+                break;
+            }
+            size = (g_indevice == DEV_CB) ? (HIBYTE32(code[*idx]) & 0x1) ^ 1 : SIZE_HALF;
+            skip = (g_indevice == DEV_CB) ? HIHALF(code[*idx]) & 0xFF : HIHALF(code[*idx]) & 0xFFF;
+            count = (skip <= 2) ? skip-1 : ARM_SKIP_N;
+            cheatAppendOctet(dest, MAKE_ARM_CMD(STDCompToArm[tmp], count, size) | ADDR(code[*idx+1]));
+            cheatAppendOctet(dest, LOHALF(code[*idx]));
+            *idx+=2;
+            if(skip > 2) {
+                skip = (skip << 1) + *idx;
+                while(*idx < src->codecnt && *idx < skip) {
+                    ret = transStdToMax(dest, src, idx);
+                    if(ret) break;
+                }
+                if(!ret) {
+                    cheatAppendOctet(dest, ARM_CMD_SPECIAL);
+                    cheatAppendOctet(dest, ARM_CMD_RESUME);
+                }
+            }
+            break;
+        case STD_UNCOND_HOOK:
+            address = ADDR(code[*idx]);
+            value = ARM_ENABLE_STD;
+            if(address == 0x100008 || address == 0x100000 || address == 0x200000 || address == 0x200008) {  //likely entry point values
+                if(code[*idx + 1] == 0x1FD || code[*idx + 1] == 0xE)
+                    value = ARM_ENABLE_INT;
+                else
+                    address = code[*idx + 1] & 0x1FFFFFC;
+            }
+            cheatAppendOctet(dest, MAKE_ARM_CMD(ARM_WRITE, ARM_HOOK, SIZE_WORD) | address);
+            cheatAppendOctet(dest, value);
+            *idx+=2;
+            break;
+    }
+    return ret;
 }
 
 void transSmash(cheat_t *dest, u8 size, u32 address, u32 value, u32 fillcount) {
@@ -704,7 +675,7 @@ int transMaxToStd(cheat_t *dest, cheat_t *src, int *idx) {
 	u8 command, size, type, subtype, type2, subtype2;
 	u32 address, increment, offset, value, count, skip;
 	u32 *code = src->code;
-	
+
 	trans = cnt = ret = 0;
 	if(code[*idx] == ARM_CMD_SPECIAL) {
 		if(code[*idx + 1] == ARM_CMD_RESUME) {
@@ -817,7 +788,7 @@ int transMaxToStd(cheat_t *dest, cheat_t *src, int *idx) {
 	else {  //test commands
 		if(type == ARM_LESS_SIGNED || type == ARM_GREATER_SIGNED || subtype == ARM_SKIP_ALL_INV || (subtype == ARM_AND && g_outdevice != DEV_CB)) {
 			ret = ERR_TEST_TYPE;
-		} 
+		}
 		if(size == SIZE_BYTE && g_outdevice != DEV_CB) ret = ERR_TEST_SIZE;
 		trans = 0;
 		if(size == SIZE_WORD) {
@@ -848,11 +819,11 @@ int transMaxToStd(cheat_t *dest, cheat_t *src, int *idx) {
 			if(type == ARM_AND) type-=2;
 			else if(type <= ARM_NOT_EQUAL) type--;
 			else type-=3;
-			
+
 			if(subtype == ARM_SKIP_1) skip = 2;
 			else if(subtype == ARM_SKIP_2) skip = 4;
 			else skip = src->codecnt;			//max
-			
+
 			//temporarily append the code
 			int tmpout = dest->codecnt;
 			size = size == SIZE_HALF ? 0 : 1;
@@ -876,8 +847,39 @@ int transMaxToStd(cheat_t *dest, cheat_t *src, int *idx) {
 				dest->code[tmpout+1]	= (type << 20) | (size << 16) | value;
 			} else {
 				dest->code[tmpout]	= MAKE_STD_CMD(STD_TEST_MULTI) | (size << 24) | (tmpcnt << 16) | value;
-			}	
+			}
 		}
 	}
 	return ret;
+}
+
+int transBatchTranslate(cheat_t *src) {
+    cheat_t *dest = cheatInit(MAX_CODE_STEP);
+    int ret, i;
+
+    if(g_indevice == g_outdevice) return 0;
+
+    if(g_indevice != DEV_ARMAX) {
+        if(g_outdevice == DEV_ARMAX) {
+            for(i = 0; i < src->codecnt;) {
+                ret = transStdToMax(dest, src, &i);
+                if(!err_suppress && ret) break;
+            }
+        } else {
+            for(i = 0; i < src->codecnt;) {
+                ret = transOther(dest, src, &i);
+                if(!err_suppress && ret) break;
+            }
+        }
+    } else {
+        for(i = 0; i < src->codecnt;) {
+            ret = transMaxToStd(dest, src, &i);
+            if(!err_suppress && ret) break;
+        }
+    }
+    if(dest->codemax > src->codemax) src->code = realloc(src->code, sizeof(u32) * dest->codemax);
+    memcpy(src->code, dest->code, sizeof(u32) * dest->codecnt);
+    src->codecnt = dest->codecnt;
+
+    return ret;
 }
