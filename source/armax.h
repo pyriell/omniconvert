@@ -51,6 +51,7 @@ void armMakeVerifier(u32 *code, u32 num, u32 ver[2], u32 gameid, u8 region);
 void armMakeFolder(cheat_t *cheat, u32 gameid, u8 region);
 void armEnableExpansion(cheat_t *cheat);
 int armMakeDiscHash(u32 *hash, HWND hwnd, char drive);
+s16 armReadVerifier(u32 *code, u32 size);
 
 //decryption
 void unscramble1(u32 *addr, u32 *val);

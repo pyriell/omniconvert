@@ -32,6 +32,7 @@
 #include "cheat.h"
 #include "common.h"
 #include "translate.h"
+#include "armax.h"
 
 
 #define EXPANSION_DATA_FOLDER	0x0800
