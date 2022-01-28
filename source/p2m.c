@@ -58,7 +58,7 @@ static const u32 TERM_CODE_NAME =	0x40000000;
 static const u32 TERM_CODE_LINE	=	0x80000000;
 const char *color_prefix[NUM_COLORS] = { "{0", "{1", "{2", "{3", "{4", "{5", "{6", "{7", "{8" };
 
-inline void p2mInitHeader(p2mheader_t *header, char *name) {
+void p2mInitHeader(p2mheader_t *header, char *name) {
 	header->fileid			= P2M_FILE_ID;
 	header->fileversion		= P2M_FILE_VERSION;
 	strncpy(header->name, name, P2M_NAME_SIZE - 1);
