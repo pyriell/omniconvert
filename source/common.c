@@ -28,6 +28,7 @@
  */
 
 #include <malloc.h>
+#include <stdio.h>
 #include <windows.h>
 #include "abbtypes.h"
 #include "common.h"
