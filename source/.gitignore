@@ -1,0 +1,10 @@
+# Object files
+*.o
+libbig_int/src/*.o
+
+# Output executable(s)
+*.exe
+
+# CLion project files
+.idea/
+../.idea/

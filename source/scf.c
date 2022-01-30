@@ -31,7 +31,7 @@ typedef struct {
 	u32	*code;			//The cheats themselves.  u32 code[num_lines * 2]
 } t_scf_cheat;
 
-inline void scfInitHeader(t_scf_header *header) {
+void scfInitHeader(t_scf_header *header) {
 	memset((u8 *)header, 0, sizeof(t_scf_header));
 	return;
 }

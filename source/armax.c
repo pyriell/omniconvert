@@ -30,6 +30,8 @@
  */
 
 #include "armax.h"
+#include "ar2.h"
+#include "crc32.h"
 #include <windows.h>
 #include <stdio.h>
 

@@ -31,7 +31,7 @@ all:	$(OBJS)
 	$(CC) $(COPTS) -o $(EXE) $(OBJS) $(LDFLAGS)
 
 clean:
-	rm -f *.o *.exe *~
+	powershell -Command rm ./*.o ; rm ./libbig_int/*.o ; rm ./libbig_int/src/*.o ; rm ./*.obj ; rm ./libbig_int/*.obj ; rm ./libbig_int/src/*.obj ; rm ./*.exe ; rm ./~*
 
 rebuild:	clean all
 
